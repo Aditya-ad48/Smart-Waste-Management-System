@@ -36,8 +36,7 @@ smart-waste-management/
 ├── waste_bin_controller.ino
 ├── /ml-model/
 │   ├── waste_classifier.py         # Core logic
-│   ├── waste_app.py                # Streamlit interface
-│   ├── efficientnet_model.h5       # Trained model weights
+│   ├── waste_app.py                # Streamlit interface    
 │   └── requirements.txt
 ├── broker_setup_guide.md
 
@@ -68,7 +67,7 @@ pip install -r requirements.txt
 ### 3. Run Streamlit App (Local UI)
 
 ```bash
-run dashboard.py
+streamlit run waste_app.py
 ```
 
 This app:
@@ -98,15 +97,6 @@ Follow the steps in:
 ```
 mqtt_setup_guide.md
 ```
-
-Or install quickly via:
-
-```bash
-sudo apt install mosquitto mosquitto-clients
-sudo systemctl start mosquitto
-```
-
----
 
 
 
