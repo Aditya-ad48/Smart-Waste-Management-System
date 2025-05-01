@@ -12,6 +12,8 @@ import os
 from datetime import datetime
 from PIL import Image
 import io
+import requests
+from tempfile import NamedTemporaryFile
 
 # Logging Setup
 logging.basicConfig(
@@ -21,7 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 # Constants
-MQTT_BROKER = "192.168.45.125"
 MQTT_PORT = 1883
 LEVEL_TOPIC = "smartbin/levels"
 CLASS_TOPIC = "waste/classification"
@@ -31,6 +32,7 @@ MAX_CLASSIFICATIONS = 10
 MAX_DISTANCE = 22  # cm (empty)
 MIN_DISTANCE = 3  # cm (full)
 COOLDOWN_PERIOD = 5  # seconds
+MODEL_URL = "https://huggingface.co/aditya1310/waste-management-system/resolve/main/final_model.keras"
 
 # Initialize data file
 if not os.path.exists(DATA_FILE):
@@ -52,6 +54,8 @@ def save_data(data):
             json.dump(data, f)
     except Exception as e:
         logger.error(f"Error saving data to file: {e}")
+        # Fallback to session state for remote environments
+        st.session_state.bin_data = data
 
 def load_data():
     try:
@@ -70,12 +74,13 @@ def load_data():
             }
     except Exception as e:
         logger.error(f"Error loading data from file: {e}")
-        return {
+        # Fallback to session state
+        return st.session_state.get("bin_data", {
             "recyclable": 0,
             "non_recyclable": 0,
             "classifications": [],
             "last_update": time.time()
-        }
+        })
 
 def distance_to_percentage(distance):
     try:
@@ -100,6 +105,39 @@ def clear_history():
         logger.error(f"Error clearing history: {e}")
         st.error(f"Failed to clear history: {e}")
 
+# Load TensorFlow model from Hugging Face
+@st.cache_resource
+def load_model():
+    try:
+        logger.info(f"Downloading model from {MODEL_URL}")
+        response = requests.get(MODEL_URL, stream=True)
+        if response.status_code != 200:
+            raise Exception(f"Failed to download model: HTTP {response.status_code}")
+        
+        with NamedTemporaryFile(delete=False, suffix=".keras") as tmp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
+        
+        model = tf.keras.models.load_model(tmp_file_path)
+        logger.info("Model loaded successfully")
+        os.unlink(tmp_file_path)  # Clean up temporary file
+        return model
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        st.error(
+            f"Failed to load model: {e}\n\n"
+            "Possible fixes:\n"
+            f"- Verify the model URL: {MODEL_URL}\n"
+            "- Ensure the model is a valid .keras file and publicly accessible\n"
+            f"- Check TensorFlow version compatibility (current: {tf.__version__})\n"
+            "- If the model is corrupted, re-upload to Hugging Face\n"
+            "- Check network connectivity for downloading the model"
+        )
+        st.stop()
+
+model = load_model()
+
 # MQTT Setup
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
@@ -111,7 +149,7 @@ def on_connect(client, userdata, flags, rc, properties=None):
 
 def on_message(client, userdata, msg, properties=None):
     try:
-        payload = msg.payload.decode()
+        payload = msg.payload.decode('utf-8')
         logger.info(f"Received MQTT message on {msg.topic}: {payload}")
         data = json.loads(payload)
         current_data = load_data()
@@ -143,48 +181,38 @@ def on_message(client, userdata, msg, properties=None):
         save_data(current_data)
         st.session_state.bin_data = current_data
 
+    except UnicodeDecodeError as e:
+        logger.error(f"Failed to decode MQTT payload: {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in MQTT payload: {e}")
     except Exception as e:
         logger.error(f"Error processing MQTT message: {e}")
 
-def mqtt_thread():
+def mqtt_thread(broker):
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
     client.on_message = on_message
     while True:
         try:
-            logger.info(f"Connecting to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
-            client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+            logger.info(f"Connecting to MQTT broker at {broker}:{MQTT_PORT}")
+            client.connect(broker, MQTT_PORT, keepalive=60)
             client.loop_forever()
         except Exception as e:
             logger.error(f"MQTT connection failed: {e}")
             time.sleep(5)
 
-# Start MQTT thread
-if "mqtt_thread_started" not in st.session_state:
-    threading.Thread(target=mqtt_thread, daemon=True).start()
-    st.session_state.mqtt_thread_started = True
-    logger.info("MQTT thread started")
-
 # Initialize MQTT client for publishing
-mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-try:
-    mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
-    mqtt_client.loop_start()
-    logger.info("MQTT client for publishing connected")
-except Exception as e:
-    logger.error(f"MQTT publishing client connection failed: {e}")
-    st.error(f"Failed to connect to MQTT broker: {e}")
-    st.stop()
-
-# Load TensorFlow model
-model_path = "/Users/aditya/Desktop/final_model.keras"
-try:
-    model = tf.keras.models.load_model(model_path)
-    logger.info("Model loaded successfully")
-except Exception as e:
-    logger.error(f"Error loading model: {e}")
-    st.error(f"Error loading model: {e}")
-    st.stop()
+def init_mqtt_client(broker):
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    try:
+        mqtt_client.connect(broker, MQTT_PORT)
+        mqtt_client.loop_start()
+        logger.info("MQTT client for publishing connected")
+        return mqtt_client
+    except Exception as e:
+        logger.error(f"MQTT publishing client connection failed: {e}")
+        st.error(f"Failed to connect to MQTT broker {broker}: {e}")
+        return None
 
 # Streamlit Config
 st.set_page_config(
@@ -231,6 +259,37 @@ if "capture_count" not in st.session_state:
     st.session_state.capture_count = 0
 if "last_sent_time" not in st.session_state:
     st.session_state.last_sent_time = 0
+if "mqtt_client" not in st.session_state:
+    st.session_state.mqtt_client = None
+if "mqtt_thread_started" not in st.session_state:
+    st.session_state.mqtt_thread_started = False
+
+# MQTT Broker Input
+st.sidebar.header("MQTT Configuration")
+mqtt_broker = st.sidebar.text_input(
+    "MQTT Broker IP/Hostname",
+    value="broker.hivemq.com",
+    help="Enter the MQTT broker IP or hostname (e.g., broker.hivemq.com for testing)"
+)
+if st.sidebar.button("Connect to MQTT", use_container_width=True):
+    if mqtt_broker:
+        # Stop existing MQTT client if any
+        if st.session_state.mqtt_client:
+            st.session_state.mqtt_client.loop_stop()
+            st.session_state.mqtt_client.disconnect()
+        # Start MQTT thread
+        if not st.session_state.mqtt_thread_started:
+            threading.Thread(target=mqtt_thread, args=(mqtt_broker,), daemon=True).start()
+            st.session_state.mqtt_thread_started = True
+            logger.info("MQTT thread started")
+        # Initialize publishing client
+        st.session_state.mqtt_client = init_mqtt_client(mqtt_broker)
+        if st.session_state.mqtt_client:
+            st.sidebar.success(f"Connected to {mqtt_broker}")
+        else:
+            st.sidebar.error(f"Failed to connect to {mqtt_broker}")
+    else:
+        st.sidebar.error("Please enter a valid MQTT broker address")
 
 # Process Image
 def process_image(image, model, capture_count):
@@ -313,13 +372,13 @@ def process_image(image, model, capture_count):
 
         # Publish to MQTT if cooldown allows
         current_time = time.time()
-        if current_time - st.session_state.last_sent_time > COOLDOWN_PERIOD:
+        if current_time - st.session_state.last_sent_time > COOLDOWN_PERIOD and st.session_state.mqtt_client:
             payload = json.dumps({
                 "classification": predicted_label,
                 "confidence": float(confidence),
                 "timestamp": current_time
             })
-            mqtt_client.publish(CLASS_TOPIC, payload)
+            st.session_state.mqtt_client.publish(CLASS_TOPIC, payload)
             logger.info(f"Capture {capture_count}: [MQTT] Sent: {payload}")
             st.session_state.last_sent_time = current_time
 
@@ -344,6 +403,7 @@ def process_image(image, model, capture_count):
 # UI
 st.title("🧠 Smart Waste Bin Dashboard")
 st.markdown("Capture waste images for classification and monitor bin levels in real-time.")
+st.warning("Note: Captured images are stored temporarily and may not persist across sessions on this platform.")
 
 # Layout
 col1, col2 = st.columns([2, 1])
@@ -433,7 +493,3 @@ with col2:
 # Auto Refresh
 time.sleep(refresh_interval)
 st.rerun()
-
-# Cleanup
-mqtt_client.loop_stop()
-mqtt_client.disconnect()
