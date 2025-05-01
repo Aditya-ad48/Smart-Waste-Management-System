@@ -14,6 +14,7 @@ from PIL import Image
 import io
 import requests
 from tempfile import NamedTemporaryFile
+import socket
 
 # Logging Setup
 logging.basicConfig(
@@ -150,14 +151,36 @@ def clear_history():
         logger.error(f"Error clearing history: {e}")
         st.error(f"Failed to clear history: {e}")
 
+# Get local IP address
+def get_local_ip():
+    try:
+        # Create a socket to determine the local IP address
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # doesn't need to be reachable
+        s.connect(('10.255.255.255', 1))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception:
+        return '127.0.0.1'  # Fallback to localhost
+
 # MQTT Setup
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         logger.info("Connected to MQTT broker")
         client.subscribe(LEVEL_TOPIC)
         client.subscribe(CLASS_TOPIC)
+        st.session_state.mqtt_connected = True
     else:
         logger.error(f"Failed to connect to MQTT, code: {rc}")
+        st.session_state.mqtt_connected = False
+        st.session_state.mqtt_error = f"Connection failed with code {rc}"
+
+def on_disconnect(client, userdata, rc, properties=None):
+    logger.warning(f"Disconnected from MQTT broker with code: {rc}")
+    st.session_state.mqtt_connected = False
+    if rc != 0:
+        st.session_state.mqtt_error = f"Unexpected disconnect with code {rc}"
 
 def on_message(client, userdata, msg, properties=None):
     try:
@@ -200,14 +223,30 @@ def on_message(client, userdata, msg, properties=None):
     except Exception as e:
         logger.error(f"Error processing MQTT message: {e}")
 
-def mqtt_thread(broker):
+def mqtt_thread(broker, port=MQTT_PORT, client_id=None, username=None, password=None):
     try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        if client_id:
+            client = mqtt.Client(client_id=client_id, mqtt.CallbackAPIVersion.VERSION2)
+        else:
+            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        
         client.on_connect = on_connect
         client.on_message = on_message
+        client.on_disconnect = on_disconnect
         
-        # Add connection timeout
-        client.connect_async(broker, MQTT_PORT, keepalive=60)
+        # Set username/password if provided
+        if username and password:
+            client.username_pw_set(username, password)
+        
+        # Add connection timeout and error handling
+        try:
+            client.connect(broker, port, keepalive=60)
+            logger.info(f"MQTT client connecting to {broker}:{port}")
+        except Exception as e:
+            logger.error(f"Failed to connect to MQTT broker: {e}")
+            st.session_state.mqtt_error = str(e)
+            return
+        
         client.loop_start()
         
         # Don't loop forever in the thread, just start the loop and return
@@ -215,28 +254,24 @@ def mqtt_thread(broker):
         logger.info(f"MQTT client started with broker {broker}")
     except Exception as e:
         logger.error(f"MQTT thread error: {e}")
-        st.error(f"Failed to start MQTT client: {e}")
+        st.session_state.mqtt_error = str(e)
 
 # Initialize MQTT client for publishing
-def init_mqtt_client(broker):
+def init_mqtt_client(broker, port=MQTT_PORT, client_id=None, username=None, password=None):
     try:
-        mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        mqtt_client.connect(broker, MQTT_PORT, keepalive=60)
+        if client_id:
+            mqtt_client = mqtt.Client(client_id=client_id, mqtt.CallbackAPIVersion.VERSION2)
+        else:
+            mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        
+        # Set username/password if provided
+        if username and password:
+            mqtt_client.username_pw_set(username, password)
+        
+        # Connect with timeout
+        mqtt_client.connect(broker, port, keepalive=60)
         mqtt_client.loop_start()
-        logger.info("MQTT client for publishing connected")
-        return mqtt_client
-    except Exception as e:
-        logger.error(f"MQTT publishing client connection failed: {e}")
-        st.warning(f"Failed to connect to MQTT broker {broker}. Some features may be limited. Error: {e}")
-        return None
-
-# Initialize MQTT client for publishing
-def init_mqtt_client(broker):
-    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    try:
-        mqtt_client.connect(broker, MQTT_PORT)
-        mqtt_client.loop_start()
-        logger.info("MQTT client for publishing connected")
+        logger.info(f"MQTT client for publishing connected to {broker}:{port}")
         return mqtt_client
     except Exception as e:
         logger.error(f"MQTT publishing client connection failed: {e}")
@@ -271,6 +306,21 @@ st.markdown("""
     .classification-table th {
         background-color: #2E2E2E;
     }
+    .connection-status {
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-weight: bold;
+        display: inline-block;
+        margin-bottom: 10px;
+    }
+    .connected {
+        background-color: #0A5C36;
+        color: white;
+    }
+    .disconnected {
+        background-color: #5C0A0A;
+        color: white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -285,33 +335,80 @@ if "mqtt_client" not in st.session_state:
     st.session_state.mqtt_client = None
 if "mqtt_thread_started" not in st.session_state:
     st.session_state.mqtt_thread_started = False
+if "mqtt_connected" not in st.session_state:
+    st.session_state.mqtt_connected = False
+if "mqtt_error" not in st.session_state:
+    st.session_state.mqtt_error = None
+
+# Get local IP for suggestion
+local_ip = get_local_ip()
 
 # MQTT Broker Input
 st.sidebar.header("MQTT Configuration")
+
+# Broker input with local IP suggestion
 mqtt_broker = st.sidebar.text_input(
     "MQTT Broker IP/Hostname",
-    value="broker.hivemq.com",
-    help="Enter the MQTT broker IP or hostname (e.g., broker.hivemq.com for testing)"
+    value=local_ip,
+    help=f"Enter your local MQTT broker IP (default: {local_ip}) or hostname (e.g., broker.hivemq.com for testing)"
 )
+
+# Advanced MQTT options
+with st.sidebar.expander("Advanced MQTT Options"):
+    mqtt_port = st.number_input("MQTT Port", min_value=1, max_value=65535, value=MQTT_PORT)
+    mqtt_username = st.text_input("Username (optional)")
+    mqtt_password = st.text_input("Password (optional)", type="password")
+    mqtt_client_id = st.text_input("Client ID (optional)", value=f"smartbin_{int(time.time())}")
+
+# Connection button
 if st.sidebar.button("Connect to MQTT", use_container_width=True):
     if mqtt_broker:
+        # Reset error state
+        st.session_state.mqtt_error = None
+        
         # Stop existing MQTT client if any
         if st.session_state.mqtt_client:
             st.session_state.mqtt_client.loop_stop()
             st.session_state.mqtt_client.disconnect()
+            st.session_state.mqtt_client = None
+            st.session_state.mqtt_connected = False
+        
         # Start MQTT thread
-        if not st.session_state.mqtt_thread_started:
-            threading.Thread(target=mqtt_thread, args=(mqtt_broker,), daemon=True).start()
-            st.session_state.mqtt_thread_started = True
-            logger.info("MQTT thread started")
+        threading.Thread(
+            target=mqtt_thread, 
+            args=(mqtt_broker, mqtt_port, mqtt_client_id, mqtt_username, mqtt_password), 
+            daemon=True
+        ).start()
+        st.session_state.mqtt_thread_started = True
+        logger.info(f"MQTT thread started for {mqtt_broker}:{mqtt_port}")
+        
         # Initialize publishing client
-        st.session_state.mqtt_client = init_mqtt_client(mqtt_broker)
+        st.session_state.mqtt_client = init_mqtt_client(
+            mqtt_broker, mqtt_port, mqtt_client_id, mqtt_username, mqtt_password
+        )
+        
         if st.session_state.mqtt_client:
-            st.sidebar.success(f"Connected to {mqtt_broker}")
+            st.sidebar.success(f"Connected to {mqtt_broker}:{mqtt_port}")
+            st.session_state.mqtt_connected = True
         else:
-            st.sidebar.error(f"Failed to connect to {mqtt_broker}")
+            st.sidebar.error(f"Failed to connect to {mqtt_broker}:{mqtt_port}")
+            st.session_state.mqtt_connected = False
     else:
         st.sidebar.error("Please enter a valid MQTT broker address")
+
+# Display connection status
+if st.session_state.mqtt_connected:
+    st.sidebar.markdown(
+        f'<div class="connection-status connected">✓ Connected to {mqtt_broker}</div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.sidebar.markdown(
+        f'<div class="connection-status disconnected">✗ Not Connected</div>',
+        unsafe_allow_html=True
+    )
+    if st.session_state.mqtt_error:
+        st.sidebar.error(f"Error: {st.session_state.mqtt_error}")
 
 # Process Image
 def process_image(image, model, capture_count):
@@ -500,8 +597,38 @@ if st.checkbox("Show Debug Info"):
     Raw bin data: {json.dumps(bin_data)}<br>
     Data file: {os.path.abspath(DATA_FILE)}<br>
     Capture count: {st.session_state.capture_count}<br>
+    MQTT Status: {"Connected" if st.session_state.mqtt_connected else "Disconnected"}<br>
+    MQTT Broker: {mqtt_broker}<br>
+    MQTT Port: {mqtt_port}<br>
+    MQTT Client ID: {mqtt_client_id if 'mqtt_client_id' in locals() else "Not set"}<br>
+    Local IP: {local_ip}<br>
     </div>
     """, unsafe_allow_html=True)
+
+# Test MQTT Section
+with st.expander("Test MQTT Connection"):
+    test_col1, test_col2 = st.columns(2)
+    with test_col1:
+        test_message = st.text_input("Test Message", value='{"recyclable": 15, "non_recyclable": 8}')
+    with test_col2:
+        test_topic = st.selectbox("Test Topic", [LEVEL_TOPIC, CLASS_TOPIC])
+    
+    if st.button("Send Test Message"):
+        if st.session_state.mqtt_client and st.session_state.mqtt_connected:
+            try:
+                # Validate JSON
+                json_data = json.loads(test_message)
+                
+                # Send message
+                st.session_state.mqtt_client.publish(test_topic, test_message)
+                st.success(f"Message sent to {test_topic}")
+                logger.info(f"Test message sent to {test_topic}: {test_message}")
+            except json.JSONDecodeError:
+                st.error("Invalid JSON format")
+            except Exception as e:
+                st.error(f"Failed to send message: {e}")
+        else:
+            st.error("MQTT client not connected. Please connect first.")
 
 # Refresh Controls
 col1, col2 = st.columns([3, 1])
