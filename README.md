@@ -55,8 +55,8 @@ smart-waste-management/
 ### 1. Clone This Repository
 
 ```bash
-git clone https://github.com/your-username/smart-waste-management.git
-cd smart-waste-management
+git clone https://github.com/aditya-ad48/Smart-Waste-Management-System.git
+cd Smart-Waste-Management-System
 ```
 
 ---
@@ -73,7 +73,7 @@ pip install -r requirements.txt
 ### 3. Run Streamlit App (Local UI)
 
 ```bash
-streamlit run waste_app.py
+dashboard.py
 ```
 
 This app:
@@ -101,7 +101,7 @@ This app:
 Follow the steps in:
 
 ```
-mqtt/broker_setup_guide.md
+mqtt_setup_guide.md
 ```
 
 Or install quickly via:
