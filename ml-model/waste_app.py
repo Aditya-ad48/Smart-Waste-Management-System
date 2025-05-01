@@ -226,7 +226,7 @@ def on_message(client, userdata, msg, properties=None):
 def mqtt_thread(broker, port=MQTT_PORT, client_id=None, username=None, password=None):
     try:
         if client_id:
-            client = mqtt.Client(client_id=client_id, mqtt.CallbackAPIVersion.VERSION2)
+            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
         else:
             client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         
@@ -260,7 +260,7 @@ def mqtt_thread(broker, port=MQTT_PORT, client_id=None, username=None, password=
 def init_mqtt_client(broker, port=MQTT_PORT, client_id=None, username=None, password=None):
     try:
         if client_id:
-            mqtt_client = mqtt.Client(client_id=client_id, mqtt.CallbackAPIVersion.VERSION2)
+            mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
         else:
             mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         
