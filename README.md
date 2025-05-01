@@ -33,19 +33,14 @@ A smart waste segregation system that combines real-time machine learning with I
 ```
 smart-waste-management/
 ├── README.md
-├── /esp8266-code/
-│   └── waste_bin_controller.ino
+├── waste_bin_controller.ino
 ├── /ml-model/
 │   ├── waste_classifier.py         # Core logic
 │   ├── waste_app.py                # Streamlit interface
 │   ├── efficientnet_model.h5       # Trained model weights
 │   └── requirements.txt
-├── /mqtt/
-│   └── broker_setup_guide.md
-├── /images/
-│   ├── system_architecture.png
-│   └── hardware_setup.jpg
-└── LICENSE
+├── broker_setup_guide.md
+
 ```
 
 ---
@@ -73,7 +68,7 @@ pip install -r requirements.txt
 ### 3. Run Streamlit App (Local UI)
 
 ```bash
-dashboard.py
+run dashboard.py
 ```
 
 This app:
@@ -113,30 +108,8 @@ sudo systemctl start mosquitto
 
 ---
 
-## 📷 Visual Overview
 
-### 🔌 System Architecture
 
-![System Architecture](images/system_architecture.png)
-
-### 🔧 Hardware Setup
-
-![Hardware Setup](images/hardware_setup.jpg)
-
----
-
-## 🌱 Future Improvements
-
-- Use YOLOv8 or MobileNetV3 for faster object detection
-- Add a cloud dashboard (e.g., Firebase or Node-RED)
-- Push bin status notifications to Telegram / mobile app
-- Add solar power for a sustainable version
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
