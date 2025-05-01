@@ -4,3 +4,4 @@ Pillow
 requests
 ultralytics
 opencv-python-headless
+tensorflow
