@@ -1,5 +1,6 @@
 [server]
 maxUploadSize = 5
+enableCORS = true
 enableXsrfProtection = false
 
 [browser]
@@ -11,3 +12,7 @@ base = "dark"
 [runner]
 magicEnabled = true
 fastReruns = true
+installTracer = false
+
+[logger]
+level = "info"
