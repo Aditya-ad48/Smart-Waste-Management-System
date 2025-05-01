@@ -47,6 +47,44 @@ if not os.path.exists(DATA_FILE):
 # Ensure capture directory exists
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
+# Load TensorFlow model from Hugging Face
+@st.cache_resource
+def load_model():
+    try:
+        logger.info(f"Downloading model from {MODEL_URL}")
+        response = requests.get(MODEL_URL, stream=True)
+        if response.status_code != 200:
+            raise Exception(f"Failed to download model: HTTP {response.status_code}")
+        
+        with NamedTemporaryFile(delete=False, suffix=".keras") as tmp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
+        
+        model = tf.keras.models.load_model(tmp_file_path)
+        logger.info("Model loaded successfully")
+        os.unlink(tmp_file_path)  # Clean up temporary file
+        return model
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        st.error(
+            f"Failed to load model: {e}\n\n"
+            "Possible fixes:\n"
+            f"- Verify the model URL: {MODEL_URL}\n"
+            "- Ensure the model is a valid .keras file and publicly accessible\n"
+            f"- Check TensorFlow version compatibility (current: {tf.__version__})\n"
+            "- If the model is corrupted, re-upload to Hugging Face\n"
+            "- Check network connectivity for downloading the model"
+        )
+        st.stop()
+
+# Streamlit Config (must be the first Streamlit command)
+st.set_page_config(
+    page_title="Smart Waste Bin Dashboard",
+    layout="wide",
+    page_icon="🧠"
+)
+
 # Utility Functions
 def save_data(data):
     try:
@@ -104,39 +142,6 @@ def clear_history():
     except Exception as e:
         logger.error(f"Error clearing history: {e}")
         st.error(f"Failed to clear history: {e}")
-
-# Load TensorFlow model from Hugging Face
-@st.cache_resource
-def load_model():
-    try:
-        logger.info(f"Downloading model from {MODEL_URL}")
-        response = requests.get(MODEL_URL, stream=True)
-        if response.status_code != 200:
-            raise Exception(f"Failed to download model: HTTP {response.status_code}")
-        
-        with NamedTemporaryFile(delete=False, suffix=".keras") as tmp_file:
-            for chunk in response.iter_content(chunk_size=8192):
-                tmp_file.write(chunk)
-            tmp_file_path = tmp_file.name
-        
-        model = tf.keras.models.load_model(tmp_file_path)
-        logger.info("Model loaded successfully")
-        os.unlink(tmp_file_path)  # Clean up temporary file
-        return model
-    except Exception as e:
-        logger.error(f"Error loading model: {e}")
-        st.error(
-            f"Failed to load model: {e}\n\n"
-            "Possible fixes:\n"
-            f"- Verify the model URL: {MODEL_URL}\n"
-            "- Ensure the model is a valid .keras file and publicly accessible\n"
-            f"- Check TensorFlow version compatibility (current: {tf.__version__})\n"
-            "- If the model is corrupted, re-upload to Hugging Face\n"
-            "- Check network connectivity for downloading the model"
-        )
-        st.stop()
-
-model = load_model()
 
 # MQTT Setup
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -214,12 +219,8 @@ def init_mqtt_client(broker):
         st.error(f"Failed to connect to MQTT broker {broker}: {e}")
         return None
 
-# Streamlit Config
-st.set_page_config(
-    page_title="Smart Waste Bin Dashboard",
-    layout="wide",
-    page_icon="🧠"
-)
+# Load model after set_page_config
+model = load_model()
 
 # Dark Theme Styling
 st.markdown("""
@@ -451,7 +452,7 @@ with col_history1:
         clear_history()
         st.rerun()
 with col_history2:
-    pass  # Empty column for layout balance
+    pass  
 
 classifications = bin_data.get("classifications", [])
 if classifications:
