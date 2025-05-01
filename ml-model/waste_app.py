@@ -201,17 +201,34 @@ def on_message(client, userdata, msg, properties=None):
         logger.error(f"Error processing MQTT message: {e}")
 
 def mqtt_thread(broker):
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    while True:
-        try:
-            logger.info(f"Connecting to MQTT broker at {broker}:{MQTT_PORT}")
-            client.connect(broker, MQTT_PORT, keepalive=60)
-            client.loop_forever()
-        except Exception as e:
-            logger.error(f"MQTT connection failed: {e}")
-            time.sleep(5)
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        client.on_connect = on_connect
+        client.on_message = on_message
+        
+        # Add connection timeout
+        client.connect_async(broker, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        
+        # Don't loop forever in the thread, just start the loop and return
+        # This prevents blocking the Streamlit app
+        logger.info(f"MQTT client started with broker {broker}")
+    except Exception as e:
+        logger.error(f"MQTT thread error: {e}")
+        st.error(f"Failed to start MQTT client: {e}")
+
+# Initialize MQTT client for publishing
+def init_mqtt_client(broker):
+    try:
+        mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        mqtt_client.connect(broker, MQTT_PORT, keepalive=60)
+        mqtt_client.loop_start()
+        logger.info("MQTT client for publishing connected")
+        return mqtt_client
+    except Exception as e:
+        logger.error(f"MQTT publishing client connection failed: {e}")
+        st.warning(f"Failed to connect to MQTT broker {broker}. Some features may be limited. Error: {e}")
+        return None
 
 # Initialize MQTT client for publishing
 def init_mqtt_client(broker):
