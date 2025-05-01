@@ -47,6 +47,13 @@ if not os.path.exists(DATA_FILE):
 # Ensure capture directory exists
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
+# Streamlit Config (must be first Streamlit command)
+st.set_page_config(
+    page_title="Smart Waste Bin Dashboard",
+    layout="wide",
+    page_icon="🧠"
+)
+
 # Load TensorFlow model from Hugging Face
 @st.cache_resource
 def load_model():
@@ -78,12 +85,12 @@ def load_model():
         )
         st.stop()
 
-# Streamlit Config (must be the first Streamlit command)
-st.set_page_config(
-    page_title="Smart Waste Bin Dashboard",
-    layout="wide",
-    page_icon="🧠"
-)
+# Load model after set_page_config
+try:
+    model = load_model()
+except Exception as e:
+    logger.error(f"Failed to initialize model: {e}")
+    st.stop()
 
 # Utility Functions
 def save_data(data):
@@ -218,9 +225,6 @@ def init_mqtt_client(broker):
         logger.error(f"MQTT publishing client connection failed: {e}")
         st.error(f"Failed to connect to MQTT broker {broker}: {e}")
         return None
-
-# Load model after set_page_config
-model = load_model()
 
 # Dark Theme Styling
 st.markdown("""
@@ -452,7 +456,7 @@ with col_history1:
         clear_history()
         st.rerun()
 with col_history2:
-    pass  
+    pass  # Empty column for layout balance
 
 classifications = bin_data.get("classifications", [])
 if classifications:
