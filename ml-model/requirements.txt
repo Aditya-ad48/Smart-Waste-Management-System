@@ -1,7 +1,7 @@
-streamlit==1.38.0
-tensorflow-cpu==2.15.0
-opencv-python-headless==4.10.0
-numpy==1.26.4
-paho-mqtt==2.1.0
-pillow==10.4.0
-requests==2.32.3
+streamlit==1.32.0
+tensorflow-cpu==2.14.0
+opencv-python-headless==4.8.1.78
+paho-mqtt==2.2.1
+pillow==10.0.0
+numpy==1.24.3
+requests==2.31.0
