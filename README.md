@@ -3,8 +3,8 @@
 A smart waste segregation system that combines real-time machine learning with IoT-based automation. The system classifies waste as **recyclable** or **non-recyclable** using a webcam and a deep learning model (EfficientNet), then operates the appropriate bin via an ESP8266 microcontroller and servo motors. Bin levels are monitored using ultrasonic sensors and displayed locally via a **Streamlit web app**.
 
 
-🌐 Try the Live App
-🚀 [Click here to use the app](https://smart-waste-management-system-a5e2imccyite8zq97s7rur.streamlit.app/)
+🌐 **Try it**
+🚀 [Click here to use](https://smart-waste-management-system-a5e2imccyite8zq97s7rur.streamlit.app/)
 ---
 
 ## 🚀 Features
