@@ -4,7 +4,7 @@ A smart waste segregation system that combines real-time machine learning with I
 
 
 🌐 Try the Live App
-🚀 Click here to use the app[https://smart-waste-management-system-a5e2imccyite8zq97s7rur.streamlit.app/]
+🚀 [Click here to use the app](https://smart-waste-management-system-a5e2imccyite8zq97s7rur.streamlit.app/)
 ---
 
 ## 🚀 Features
